@@ -57,7 +57,7 @@ class Graph(object):
         self.neighbor2_tag = []
 
         for i in range(self.num_nodes):
-            self.neighbor1.append(g.neighbors(i))
+            self.neighbor1.append(list(g.neighbors(i)))
             self.neighbor1_tag.append([node_tags[w] for w in g.neighbors(i)])
         for i in range(self.num_nodes):
             tmp = []
@@ -68,6 +68,13 @@ class Graph(object):
             self.neighbor2.append(tmp)
             self.neighbor2_tag.append([node_tags[w] for w in tmp])
 
+        self.adj = np.zeros((self.num_nodes, self.num_nodes))
+        for i in range(self.num_nodes):
+            for j in self.neighbor1[i]:
+                self.adj[i, j] = 1.0
+        for i in range(self.num_nodes):
+            for j in self.neighbor2[i]:
+                self.adj[i, j] = 0.5
 
 
 def load_data(args, fold):
@@ -142,15 +149,57 @@ class LSTMClassifier(nn.Module):
         node_feat.scatter_(1, node_tags, 1) # turn zero matrix to one-hot
         node_feat = Variable(node_feat)
         node_feat = self.embedding(node_feat)
+
+
         # Prepare neighbor features
         neighbor1_tags = batch_graph[0].neighbor1_tag
+        adj = batch_graph[0].adj
         neighbor1_feat = Variable(torch.zeros(num_nodes, args.feat_dim))
         for i in range(num_nodes):
             for j in neighbor1_tags[i]:
                 neighbor1_feat[i, j] = neighbor1_feat[i, j] + 1.
         neighbor1_feat = neighbor1_feat.to(self.device)
+
+        mask = torch.ones(num_nodes)
+        i_node = np.random.randint(num_nodes)
+        mask[i_node] = 0
+        node_order = [i_node] 
+        for _ in range(num_nodes - 1):
+            prob = torch.from_numpy(adj[i_node, :]).float()
+            prob += torch.FloatTensor(num_nodes).uniform_(0.01, 0.1)
+            prob = torch.exp(prob)
+            prob /= torch.sum(prob)
+
+            print("Mask: ", mask)
+            print("Probs before mask: ", prob)
+            prob *= mask
+            print("Probs after mask: ", prob)
+           
+            print("Probs: ", prob)
+            i_node = torch.argmax(prob).item()
+            print("next_node: ", i_node)
+            node_order.append(i_node)
+            mask[i_node] = 0
+            _ = input()
+
+        print("Done! ", len(node_order))
+        print("Node order: ", node_order)
+        node_order = torch.LongTensor(node_order).view(-1, 1)
+        # TODO: 128 is embedding x 2, change it later
+        node_order = node_order.repeat(1, 128)
+
         neighbor1_feat = self.embedding(neighbor1_feat)
         input_feat = torch.cat((node_feat, neighbor1_feat), 1)
+
+        print("input feat before: ", input_feat)
+
+        # Swap rows according to the probabilistic order
+        node_order = node_order.to(self.device)
+        print("shapes: ", input_feat.shape, node_order.shape)
+        input_feat = torch.gather(input_feat, 0, node_order)
+
+        print("Input feat after: ", input_feat)
+
         input_feat = input_feat.view(num_nodes, 1, -1)
         out, hidden = self.model(input_feat)
         embed = torch.sum(out, dim = 0)

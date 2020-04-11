@@ -21,18 +21,18 @@ from mlp import MLPClassifier
 def parse_args():
     # TODO: Change command descritption later
     parser = argparse.ArgumentParser(description='Argparser for graph_classification')
-    parser.add_argument('-data', default='MUTAG', help='data folder name')
-    parser.add_argument('-fold', type=str, default='1', help='fold (1..10)')
-    parser.add_argument('-seed', type=int, default=1, help='seed')
-    parser.add_argument('-feat_dim', type=int, default=0, help='dimension of node feature')
-    parser.add_argument('-embedding_dim', type=int, default=64, help='dimension of node embedding')
-    parser.add_argument('-num_class', type=int, default=0, help='#classes')
-    parser.add_argument('-num_epochs', type=int, default=1000, help='number of epochs')
-    parser.add_argument('-rnn_hidden_dim', type=int, default=64, help='dimension of rnn hidden dimension')
-    parser.add_argument('-hidden', type=int, default=64, help='dimension of classification')
-    parser.add_argument('-learning_rate', type=float, default=0.0001, help='init learning_rate')
-    parser.add_argument('-device', type=str, default="cuda:0", help="cuda device name")
-    parser.add_argument('-name', type=str, default='debug', help="Expeiment name for log folder")
+    parser.add_argument('--data', default='MUTAG', help='data folder name')
+    parser.add_argument('--folds', type=str, default='1', help='fold (1..10)')
+    parser.add_argument('--seed', type=int, default=1, help='seed')
+    parser.add_argument('--feat_dim', type=int, default=0, help='dimension of node feature')
+    parser.add_argument('--embedding_dim', type=int, default=64, help='dimension of node embedding')
+    parser.add_argument('--num_class', type=int, default=0, help='#classes')
+    parser.add_argument('--num_epochs', type=int, default=1000, help='number of epochs')
+    parser.add_argument('--rnn_hidden_dim', type=int, default=64, help='dimension of rnn hidden dimension')
+    parser.add_argument('--hidden', type=int, default=64, help='dimension of classification')
+    parser.add_argument('--learning_rate', type=float, default=0.0001, help='init learning_rate')
+    parser.add_argument('--device', type=str, default="cuda:0", help="cuda device name")
+    parser.add_argument('--name', type=str, default='debug', help="Expeiment name for log folder")
     args = parser.parse_args()
     return args
     
@@ -150,7 +150,6 @@ class LSTMClassifier(nn.Module):
         node_feat = Variable(node_feat)
         node_feat = self.embedding(node_feat)
 
-
         # Prepare neighbor features
         neighbor1_tags = batch_graph[0].neighbor1_tag
         adj = batch_graph[0].adj
@@ -170,20 +169,14 @@ class LSTMClassifier(nn.Module):
             prob = torch.exp(prob)
             prob /= torch.sum(prob)
 
-            print("Mask: ", mask)
-            print("Probs before mask: ", prob)
+            # Exclude visited nodes
             prob *= mask
-            print("Probs after mask: ", prob)
-           
-            print("Probs: ", prob)
+          
+            # Find next node to visit
             i_node = torch.argmax(prob).item()
-            print("next_node: ", i_node)
             node_order.append(i_node)
             mask[i_node] = 0
-            _ = input()
 
-        print("Done! ", len(node_order))
-        print("Node order: ", node_order)
         node_order = torch.LongTensor(node_order).view(-1, 1)
         # TODO: 128 is embedding x 2, change it later
         node_order = node_order.repeat(1, 128)
@@ -191,18 +184,13 @@ class LSTMClassifier(nn.Module):
         neighbor1_feat = self.embedding(neighbor1_feat)
         input_feat = torch.cat((node_feat, neighbor1_feat), 1)
 
-        print("input feat before: ", input_feat)
-
         # Swap rows according to the probabilistic order
         node_order = node_order.to(self.device)
-        print("shapes: ", input_feat.shape, node_order.shape)
         input_feat = torch.gather(input_feat, 0, node_order)
-
-        print("Input feat after: ", input_feat)
 
         input_feat = input_feat.view(num_nodes, 1, -1)
         out, hidden = self.model(input_feat)
-        embed = torch.sum(out, dim = 0)
+        embed = torch.sum(out, dim=0)
         embed = embed.view(1, -1)
         return self.mlp(embed, label)
 
@@ -221,7 +209,6 @@ def loop_dataset(g_list, classifier, sample_idxes, optimizer=None):
     bsize = 1
     total_loss = []
     total_iters = (len(sample_idxes) + (bsize - 1) * (optimizer is None)) // bsize
-    #pbar = tqdm(range(total_iters), unit='batch')
     n_samples = 0
     for pos in range(total_iters):
         selected_idx = sample_idxes[pos * bsize : (pos + 1) * bsize]
@@ -235,9 +222,8 @@ def loop_dataset(g_list, classifier, sample_idxes, optimizer=None):
             optimizer.step()
 
         loss = loss.data.cpu().numpy()
-        #pbar.set_description('loss: %0.5f acc: %0.5f' % (loss, acc) )
 
-        total_loss.append( np.array([loss, acc]) * len(selected_idx))
+        total_loss.append(np.array([loss, acc]) * len(selected_idx))
 
         n_samples += len(selected_idx)
     if optimizer is None:
@@ -255,10 +241,10 @@ if __name__ == '__main__':
     np.random.seed(0)
     torch.manual_seed(0)
   
-    if args.fold == "all":
+    if args.folds == "all":
         folds = [i for i in range(1, 10)]
     else:
-        folds = list(map(int, args.fold.split(',')))
+        folds = list(map(int, args.folds.split(',')))
     
     for i_fold in folds:
         experiment_path = os.path.join("./results", args.name, str(i_fold))

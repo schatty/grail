@@ -30,7 +30,8 @@ def parse_args():
     parser.add_argument('-rnn_hidden_dim', type=int, default=64, help='dimension of rnn hidden dimension')
     parser.add_argument('-hidden', type=int, default=64, help='dimension of classification')
     parser.add_argument('-learning_rate', type=float, default=0.0001, help='init learning_rate')
-    parser.add_argument('-name', type=str, default='test', help="Expeiment name for log folder")
+    parser.add_argument('-device', type=str, default="cuda:0", help="cuda device name")
+    parser.add_argument('-name', type=str, default='debug', help="Expeiment name for log folder")
     args = parser.parse_args()
     return args
     
@@ -114,7 +115,7 @@ def load_data(args, fold):
 
 
 class LSTMClassifier(nn.Module):
-    def __init__(self, input_size, hidden_size, embedding_size):
+    def __init__(self, input_size, hidden_size, embedding_size, device):
         super(LSTMClassifier, self).__init__()
 
         self.input_size = input_size
@@ -125,16 +126,18 @@ class LSTMClassifier(nn.Module):
 
         self.mlp = MLPClassifier(input_size=hidden_size, hidden_size=args.hidden, num_class=args.num_class)
 
+        self.device = device
+
     def forward(self, batch_graph):
         node_tags = batch_graph[0].node_tags
         node_tags = torch.LongTensor(node_tags).view(-1, 1)
-        node_tags = node_tags.cuda()
+        node_tags = node_tags.to(self.device)
         label = [batch_graph[0].label]
         label =  torch.LongTensor(label)
-        label = label.cuda()
+        label = label.to(self.device)
         num_nodes = batch_graph[0].num_nodes
         node_feat = torch.zeros(num_nodes, args.feat_dim)
-        node_feat = node_feat.cuda()
+        node_feat = node_feat.to(self.device)
         node_feat.scatter_(1, node_tags, 1) # turn zero matrix to one-hot
         node_feat = Variable(node_feat)
         node_feat = self.embedding(node_feat)
@@ -144,7 +147,7 @@ class LSTMClassifier(nn.Module):
         for i in range(num_nodes):
             for j in neighbor1_tags[i]:
                 neighbor1_feat[i, j] = neighbor1_feat[i, j] + 1.
-        neighbor1_feat = neighbor1_feat.cuda()
+        neighbor1_feat = neighbor1_feat.to(self.device)
         neighbor1_feat = self.embedding(neighbor1_feat)
         input_feat = torch.cat((node_feat, neighbor1_feat), 1)
         input_feat = input_feat.view(num_nodes, 1, -1)
@@ -154,8 +157,8 @@ class LSTMClassifier(nn.Module):
         return self.mlp(embed, label)
 
     def init_hidden(self):
-        h_t = Variable(torch.zeros(1, self.hidden_size)).cuda()
-        c_t = Variable(torch.zeros(1, self.hidden_size)).cuda()
+        h_t = Variable(torch.zeros(1, self.hidden_size)).to(self.device)
+        c_t = Variable(torch.zeros(1, self.hidden_size)).to(self.device)
         return h_t, c_t
 
     def reset_parameters(self):
@@ -196,6 +199,7 @@ def loop_dataset(g_list, classifier, sample_idxes, optimizer=None):
 
 if __name__ == '__main__':
     args = parse_args()
+    device = args.device
   
     if args.fold == "all":
         folds = [i for i in range(1, 10)]
@@ -218,8 +222,8 @@ if __name__ == '__main__':
         hidden_size = args.rnn_hidden_dim
         embedding_size = args.embedding_dim
         loss_function = nn.NLLLoss()
-        classifier = LSTMClassifier(input_size, hidden_size, embedding_size)
-        classifier = classifier.cuda()
+        classifier = LSTMClassifier(input_size, hidden_size, embedding_size, device)
+        classifier = classifier.to(device)
         optimizer = optim.Adam(classifier.parameters(), lr=args.learning_rate)
         train_idxes = list(range(len(train_graphs)))
         start = time.time()

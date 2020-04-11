@@ -21,7 +21,7 @@ def parse_args():
     # TODO: Change command descritption later
     parser = argparse.ArgumentParser(description='Argparser for graph_classification')
     parser.add_argument('-data', default='MUTAG', help='data folder name')
-    parser.add_argument('-fold', type=int, default=1, help='fold (1..10)')
+    parser.add_argument('-fold', type=str, default='1', help='fold (1..10)')
     parser.add_argument('-seed', type=int, default=1, help='seed')
     parser.add_argument('-feat_dim', type=int, default=0, help='dimension of node feature')
     parser.add_argument('-embedding_dim', type=int, default=64, help='dimension of node embedding')
@@ -68,7 +68,7 @@ class Graph(object):
 
 
 
-def load_data():
+def load_data(args, fold):
     g_list = []
     g_neighbor_list = []
     label_dict = {}
@@ -107,8 +107,8 @@ def load_data():
     print('# classes: %d' % args.num_class)
     print('# node features: %d' % args.feat_dim)
 
-    train_idxes = np.loadtxt('data/%s/10fold_idx/train_idx-%d.txt' % (args.data, args.fold), dtype=np.int32).tolist()
-    test_idxes = np.loadtxt('data/%s/10fold_idx/test_idx-%d.txt' % (args.data, args.fold), dtype=np.int32).tolist()
+    train_idxes = np.loadtxt(f'data/{args.data}/10fold_idx/train_idx-{i_fold}.txt', dtype=np.int32).tolist()
+    test_idxes = np.loadtxt(f'data/{args.data}/10fold_idx/test_idx-{i_fold}.txt', dtype=np.int32).tolist()
 
     return [g_list[i] for i in train_idxes], [g_list[i] for i in test_idxes], g_list
 
@@ -196,40 +196,47 @@ def loop_dataset(g_list, classifier, sample_idxes, optimizer=None):
 
 if __name__ == '__main__':
     args = parse_args()
-    train_graphs, test_graphs, all_graphs = load_data()
-    print('# train: %d, # test: %d , #total: %d' % (len(train_graphs), len(test_graphs), len(all_graphs)))
+  
+    if args.fold == "all":
+        folds = [i for i in range(1, 10)]
+    else:
+        folds = list(map(int, args.fold.split(',')))
     
-    experiment_path = os.path.join("./results", args.name)
-    print("Experiment path: ", experiment_path)
-    if not os.path.exists(experiment_path):
-        os.makedirs(experiment_path)
+    for i_fold in folds:
+        experiment_path = os.path.join("./results", args.name, str(i_fold))
+        print("Experiment path: ", experiment_path)
+        if not os.path.exists(experiment_path):
+            os.makedirs(experiment_path)
 
-    logger = Logger(experiment_path)
+        logger = Logger(experiment_path)
 
-    loss_function = nn.NLLLoss()
-    input_size = args.feat_dim
-    hidden_size = args.rnn_hidden_dim
-    embedding_size = args.embedding_dim
-    loss_function = nn.NLLLoss()
-    classifier = LSTMClassifier(input_size, hidden_size, embedding_size)
-    classifier = classifier.cuda()
-    optimizer = optim.Adam(classifier.parameters(), lr=args.learning_rate)
-    train_idxes = list(range(len(train_graphs)))
-    start = time.time()
-    best_loss = None
-    print("Running for ", args.num_epochs)
-    for epoch in tqdm(range(args.num_epochs)):
-        random.shuffle(train_idxes)
-        avg_loss = loop_dataset(train_graphs, classifier, train_idxes, optimizer=optimizer)
-        test_loss = loop_dataset(test_graphs, classifier, list(range(len(test_graphs))))
-        
-        logger.log_scalar("train_loss", avg_loss[0], epoch)
-        logger.log_scalar("train_acc", avg_loss[1], epoch)
-        logger.log_scalar("val_loss", test_loss[0], epoch)
-        logger.log_scalar("val_acc", test_loss[1], epoch)
+        train_graphs, test_graphs, all_graphs = load_data(args, i_fold)
+        print('# train: %d, # test: %d , #total: %d' % (len(train_graphs), len(test_graphs), len(all_graphs)))
 
-    end = time.time()
-    print('Time for %d epochs is %.f' %(args.num_epochs, end - start))
+        loss_function = nn.NLLLoss()
+        input_size = args.feat_dim
+        hidden_size = args.rnn_hidden_dim
+        embedding_size = args.embedding_dim
+        loss_function = nn.NLLLoss()
+        classifier = LSTMClassifier(input_size, hidden_size, embedding_size)
+        classifier = classifier.cuda()
+        optimizer = optim.Adam(classifier.parameters(), lr=args.learning_rate)
+        train_idxes = list(range(len(train_graphs)))
+        start = time.time()
+        best_loss = None
+        print("Running for ", args.num_epochs)
+        for epoch in tqdm(range(args.num_epochs)):
+            random.shuffle(train_idxes)
+            avg_loss = loop_dataset(train_graphs, classifier, train_idxes, optimizer=optimizer)
+            test_loss = loop_dataset(test_graphs, classifier, list(range(len(test_graphs))))
+            
+            logger.log_scalar("train_loss", avg_loss[0], epoch)
+            logger.log_scalar("train_acc", avg_loss[1], epoch)
+            logger.log_scalar("val_loss", test_loss[0], epoch)
+            logger.log_scalar("val_acc", test_loss[1], epoch)
+
+        end = time.time()
+        print('Time for %d epochs is %.f' %(args.num_epochs, end - start))
 
     _, acc = loop_dataset(test_graphs, classifier, list(range(len(test_graphs))))
     print("Accuracy: ", acc)

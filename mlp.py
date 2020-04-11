@@ -12,6 +12,7 @@ import torch.nn.functional as F
 import torch.optim as optim
 from tqdm import tqdm
 
+
 def glorot_uniform(t):
     if len(t.size()) == 2:
         fan_in, fan_out = t.size()
@@ -26,12 +27,14 @@ def glorot_uniform(t):
     limit = np.sqrt(6.0 / (fan_in + fan_out))
     t.uniform_(-limit, limit)
 
+
 def _param_init(m):
     if isinstance(m, Parameter):
         glorot_uniform(m.data)
     elif isinstance(m, nn.Linear):
         m.bias.data.zero_()
         glorot_uniform(m.weight.data)
+
 
 def weights_init(m):
     for p in m.modules():
@@ -44,6 +47,7 @@ def weights_init(m):
     for name, p in m.named_parameters():
         if not '.' in name: # top-level parameters
             _param_init(p)
+
 
 class MLPClassifier(nn.Module):
     def __init__(self, input_size, hidden_size, num_class):
@@ -62,11 +66,18 @@ class MLPClassifier(nn.Module):
         logits = F.log_softmax(logits, dim=1)
 
         if y is not None:
-            y = Variable(y)
+            y = Variable(y).repeat(logits.shape[0], 1).squeeze(-1)
             loss = F.nll_loss(logits, y)
+            # loss = nn.NLLLoss()(logits, y)
 
             pred = logits.data.max(1, keepdim=True)[1]
-            acc = pred.eq(y.data.view_as(pred)).cpu().sum() / float(y.size()[0])
+
+            # acc = pred.eq(y.data.view_as(pred)).cpu().sum() / float(y.size()[0])
+
+            counts = np.bincount(pred.detach().cpu().numpy().flatten())
+            majority_vote = np.argmax(counts)
+            acc = float(majority_vote == y[0].item())
+
             return logits, loss, acc
         else:
             return logits

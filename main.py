@@ -159,8 +159,29 @@ class LSTMClassifier(nn.Module):
                 neighbor1_feat[i, j] = neighbor1_feat[i, j] + 1.
         neighbor1_feat = neighbor1_feat.to(self.device)
 
+        neighbor1_feat = self.embedding(neighbor1_feat)
+        input_feat = torch.cat((node_feat, neighbor1_feat), 1)
+
+        batch = []
+        for i_node in range(0, num_nodes):
+            node_order = self._get_node_order(i_node, adj, num_nodes)
+            node_order = node_order.repeat(1, 128)
+
+            # Swap rows according to the probabilistic order
+            node_order = node_order.to(self.device)
+            input_feat_perm = torch.gather(input_feat, 0, node_order)
+            input_feat_perm = input_feat.view(num_nodes, 1, -1)
+            batch.append(input_feat_perm)
+
+        batch = torch.cat(batch, axis=1)
+
+        out, hidden = self.model(batch)
+        embed = torch.mean(out, dim=0)
+
+        return self.mlp(embed, label)
+
+    def _get_node_order(self, i_node, adj, num_nodes):
         mask = torch.ones(num_nodes)
-        i_node = np.random.randint(num_nodes)
         mask[i_node] = 0
         node_order = [i_node] 
         for _ in range(num_nodes - 1):
@@ -178,21 +199,7 @@ class LSTMClassifier(nn.Module):
             mask[i_node] = 0
 
         node_order = torch.LongTensor(node_order).view(-1, 1)
-        # TODO: 128 is embedding x 2, change it later
-        node_order = node_order.repeat(1, 128)
-
-        neighbor1_feat = self.embedding(neighbor1_feat)
-        input_feat = torch.cat((node_feat, neighbor1_feat), 1)
-
-        # Swap rows according to the probabilistic order
-        node_order = node_order.to(self.device)
-        input_feat = torch.gather(input_feat, 0, node_order)
-
-        input_feat = input_feat.view(num_nodes, 1, -1)
-        out, hidden = self.model(input_feat)
-        embed = torch.sum(out, dim=0)
-        embed = embed.view(1, -1)
-        return self.mlp(embed, label)
+        return node_order
 
     def init_hidden(self):
         h_t = Variable(torch.zeros(1, self.hidden_size)).to(self.device)

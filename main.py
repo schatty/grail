@@ -12,6 +12,7 @@ import networkx as nx
 import argparse
 from tqdm import tqdm
 import time
+import json
 
 from utils import Logger
 from mlp import MLPClassifier
@@ -200,6 +201,10 @@ def loop_dataset(g_list, classifier, sample_idxes, optimizer=None):
 if __name__ == '__main__':
     args = parse_args()
     device = args.device
+
+    # Fix seeds
+    np.random.seed(0)
+    torch.manual_seed(0)
   
     if args.fold == "all":
         folds = [i for i in range(1, 10)]
@@ -242,5 +247,10 @@ if __name__ == '__main__':
         end = time.time()
         print('Time for %d epochs is %.f' %(args.num_epochs, end - start))
 
-    _, acc = loop_dataset(test_graphs, classifier, list(range(len(test_graphs))))
-    print("Accuracy: ", acc)
+        val_loss, val_acc = loop_dataset(test_graphs, classifier, list(range(len(test_graphs))))
+        print("Accuracy: ", val_acc)
+
+        metrics_path = os.path.join(experiment_path, "results.txt")
+        results = {"val_acc": float(val_acc), "val_loss": float(val_loss)}
+        with open(metrics_path, "w") as f:
+            json.dump(results, f)

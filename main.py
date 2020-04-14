@@ -182,7 +182,26 @@ class LSTMClassifier(nn.Module):
         out, hidden = self.model(batch)
         embed = torch.mean(out, dim=0)
 
-        return self.mlp_1(embed, label)
+        return self._ensemble(embed, label)
+
+    def _ensemble(self, embed, label):
+        y_1, loss_1, var_w_1 = self.mlp_1(embed, label)
+        y_2, loss_2, var_w_2 = self.mlp_2(embed, label)
+        y_3, loss_3, var_w_3 = self.mlp_3(embed, label)
+        y_4, loss_4, var_w_4 = self.mlp_4(embed, label)
+
+        var_sum = var_w_1 + var_w_2 + var_w_3 + var_w_4
+        c1 = var_w_1 / var_sum
+        c2 = var_w_2 / var_sum
+        c3 = var_w_3 / var_sum
+        c4 = var_w_4 / var_sum
+
+        y_ = c1 * y_1 + c2 * y_2 + c3 * y_3 + c4 * y_4
+        loss_ = loss_1 + loss_2 + loss_3 + loss_4
+
+        acc = ((y_ >= 0.5).int() == label.item()).float()
+
+        return loss_, acc
 
     def _get_node_order(self, i_node, adj, num_nodes):
         mask = torch.ones(num_nodes)
@@ -225,7 +244,7 @@ def loop_dataset(g_list, classifier, sample_idxes, optimizer=None):
         selected_idx = sample_idxes[pos * bsize : (pos + 1) * bsize]
 
         batch_graph = [g_list[idx] for idx in selected_idx]
-        _, loss, acc, var_w = classifier(batch_graph)
+        loss, acc = classifier(batch_graph)
 
         if optimizer is not None:
             optimizer.zero_grad()

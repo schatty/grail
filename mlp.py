@@ -69,19 +69,18 @@ class MLPClassifier(nn.Module):
 
         logits = self.h2_weights(h1)
         y_ = F.sigmoid(logits)
-        y_ = torch.mean(y_)
 
+        # Variance weight for all node-sequences permutations
         var_w = torch.pow(torch.std(y_), 2) + 1e-6
         var_w = 1. / var_w
 
+        # Final score is the mean of node-sequences
+        y_ = torch.mean(y_)
+
         if y is not None:
             y = y.float()
-
             loss = self.loss_f(y_, y)
-
-            pred = (y_ >= 0.5).int()
-            acc = float(pred == y.item())
-
-            return logits, loss, acc, var_w
+            return y_, loss, var_w
         else:
-            return logits
+            # TODO: remove later
+            raise Exception("y is uncpecified")

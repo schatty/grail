@@ -69,21 +69,19 @@ class MLPClassifier(nn.Module):
 
         logits = self.h2_weights(h1)
         y_ = F.sigmoid(logits)
+        y_ = torch.mean(y_)
+
+        var_w = torch.pow(torch.std(y_), 2) + 1e-6
+        var_w = 1. / var_w
 
         if y is not None:
             y = y.float()
-            y = y.repeat(logits.shape[0], 1)
 
             loss = self.loss_f(y_, y)
 
             pred = (y_ >= 0.5).int()
+            acc = float(pred == y.item())
 
-            # acc = pred.eq(y.data.view_as(pred)).cpu().sum() / float(y.size()[0])
-
-            counts = np.bincount(pred.detach().cpu().numpy().flatten())
-            majority_vote = np.argmax(counts)
-            acc = float(majority_vote == y[0].item())
-
-            return logits, loss, acc
+            return logits, loss, acc, var_w
         else:
             return logits

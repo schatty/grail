@@ -132,7 +132,11 @@ class LSTMClassifier(nn.Module):
         self.embedding = nn.Linear(args.feat_dim, embedding_size)
         self.model = nn.LSTM(embedding_size*2, hidden_size)
 
-        self.mlp = MLPClassifier(input_size=hidden_size, hidden_size=args.hidden, num_class=args.num_class)
+        # TODO: Remove hardcoding
+        self.mlp_1 = MLPClassifier(input_size=hidden_size, hidden_size=args.hidden, num_class=args.num_class)
+        self.mlp_2 = MLPClassifier(input_size=hidden_size, hidden_size=args.hidden, num_class=args.num_class)
+        self.mlp_3 = MLPClassifier(input_size=hidden_size, hidden_size=args.hidden, num_class=args.num_class)
+        self.mlp_4 = MLPClassifier(input_size=hidden_size, hidden_size=args.hidden, num_class=args.num_class)
 
         self.device = device
 
@@ -178,7 +182,7 @@ class LSTMClassifier(nn.Module):
         out, hidden = self.model(batch)
         embed = torch.mean(out, dim=0)
 
-        return self.mlp(embed, label)
+        return self.mlp_1(embed, label)
 
     def _get_node_order(self, i_node, adj, num_nodes):
         mask = torch.ones(num_nodes)
@@ -221,7 +225,7 @@ def loop_dataset(g_list, classifier, sample_idxes, optimizer=None):
         selected_idx = sample_idxes[pos * bsize : (pos + 1) * bsize]
 
         batch_graph = [g_list[idx] for idx in selected_idx]
-        _, loss, acc = classifier(batch_graph)
+        _, loss, acc, var_w = classifier(batch_graph)
 
         if optimizer is not None:
             optimizer.zero_grad()

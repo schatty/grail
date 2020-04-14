@@ -54,23 +54,29 @@ class MLPClassifier(nn.Module):
         super(MLPClassifier, self).__init__()
 
         self.h1_weights = nn.Linear(input_size, hidden_size)
-        self.h2_weights = nn.Linear(hidden_size, num_class)
+        self.h2_weights = nn.Linear(hidden_size, 1)
+
+        self.loss_f = nn.BCELoss()
+
+        if num_class > 2:
+            raise Exception("Multiclass classification is not supported yet!")
 
         weights_init(self)
 
-    def forward(self, x, y = None):
+    def forward(self, x, y=None):
         h1 = self.h1_weights(x)
         h1 = F.relu(h1)
 
         logits = self.h2_weights(h1)
-        logits = F.log_softmax(logits, dim=1)
+        y_ = F.sigmoid(logits)
 
         if y is not None:
-            y = Variable(y).repeat(logits.shape[0], 1).squeeze(-1)
-            loss = F.nll_loss(logits, y)
-            # loss = nn.NLLLoss()(logits, y)
+            y = y.float()
+            y = y.repeat(logits.shape[0], 1)
 
-            pred = logits.data.max(1, keepdim=True)[1]
+            loss = self.loss_f(y_, y)
+
+            pred = (y_ >= 0.5).int()
 
             # acc = pred.eq(y.data.view_as(pred)).cpu().sum() / float(y.size()[0])
 

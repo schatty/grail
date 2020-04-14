@@ -170,7 +170,7 @@ class LSTMClassifier(nn.Module):
             # Swap rows according to the probabilistic order
             node_order = node_order.to(self.device)
             input_feat_perm = torch.gather(input_feat, 0, node_order)
-            input_feat_perm = input_feat.view(num_nodes, 1, -1)
+            input_feat_perm = input_feat_perm.view(num_nodes, 1, -1)
             batch.append(input_feat_perm)
 
         batch = torch.cat(batch, axis=1)

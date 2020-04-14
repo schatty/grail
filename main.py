@@ -15,7 +15,8 @@ import time
 import json
 
 from utils import Logger
-from mlp import MLPClassifier
+from models.mlp import MLPClassifier
+from models.transformer import BasicTransformer
 
 
 def parse_args():
@@ -33,6 +34,7 @@ def parse_args():
     parser.add_argument('--learning_rate', type=float, default=0.0001, help='init learning_rate')
     parser.add_argument('--device', type=str, default="cuda:0", help="cuda device name")
     parser.add_argument('--name', type=str, default='debug', help="Expeiment name for log folder")
+    parser.add_argument('--core', type=str, default='transformer', help="lstm|transformer")
     args = parser.parse_args()
     return args
     
@@ -122,21 +124,36 @@ def load_data(args, fold):
     return [g_list[i] for i in train_idxes], [g_list[i] for i in test_idxes], g_list
 
 
-class LSTMClassifier(nn.Module):
-    def __init__(self, input_size, hidden_size, embedding_size, device):
-        super(LSTMClassifier, self).__init__()
+class GraphClassifier(nn.Module):
+    def __init__(self, core, input_size, hidden_size, embedding_size, device):
+        super(GraphClassifier, self).__init__()
 
+        self.core = core
         self.input_size = input_size
         self.hidden_size = hidden_size
         self.embedding_size = embedding_size
         self.embedding = nn.Linear(args.feat_dim, embedding_size)
-        self.model = nn.LSTM(embedding_size*2, hidden_size)
+        if core == "lstm":
+            self.model = nn.LSTM(embedding_size*2, hidden_size)
+        elif core == "transformer":
+            self.model = BasicTransformer(emb=embedding_size*2,
+                                          heads=4,
+                                          depth=6,
+                                          seq_length=50,
+                                          num_classes=2)
+        else:
+            raise ValueError("Unknown graph calssfifier core.")
 
         # TODO: Remove hardcoding
-        self.mlp_1 = MLPClassifier(input_size=hidden_size, hidden_size=args.hidden, num_class=args.num_class)
-        self.mlp_2 = MLPClassifier(input_size=hidden_size, hidden_size=args.hidden, num_class=args.num_class)
-        self.mlp_3 = MLPClassifier(input_size=hidden_size, hidden_size=args.hidden, num_class=args.num_class)
-        self.mlp_4 = MLPClassifier(input_size=hidden_size, hidden_size=args.hidden, num_class=args.num_class)
+        if args.core == "lstm":
+            hidden = args.hidden
+        else:
+            hidden = args.hidden * 2
+
+        self.mlp_1 = MLPClassifier(input_size=hidden, hidden_size=args.hidden, num_class=args.num_class)
+        self.mlp_2 = MLPClassifier(input_size=hidden, hidden_size=args.hidden, num_class=args.num_class)
+        self.mlp_3 = MLPClassifier(input_size=hidden, hidden_size=args.hidden, num_class=args.num_class)
+        self.mlp_4 = MLPClassifier(input_size=hidden, hidden_size=args.hidden, num_class=args.num_class)
 
         self.device = device
 
@@ -178,9 +195,16 @@ class LSTMClassifier(nn.Module):
             batch.append(input_feat_perm)
 
         batch = torch.cat(batch, axis=1)
-
-        out, hidden = self.model(batch)
-        embed = torch.mean(out, dim=0)
+   
+        # TODO: remove if logic
+        if self.core == "lstm":
+            out, hidden = self.model(batch)
+            embed = torch.mean(out, dim=0)
+        else:
+            # Transfomer has dimensitons [batch_size, input_seq, embed]
+            batch = batch.permute(1, 0, 2)
+            out = self.model(batch)
+            embed = torch.mean(out, dim=1)
 
         return self._ensemble(embed, label)
 
@@ -275,6 +299,8 @@ if __name__ == '__main__':
         folds = [i for i in range(1, 10)]
     else:
         folds = list(map(int, args.folds.split(',')))
+
+    print("CORE: ", args.core)
     
     for i_fold in folds:
         experiment_path = os.path.join("./results", args.name, str(i_fold))
@@ -292,7 +318,7 @@ if __name__ == '__main__':
         hidden_size = args.rnn_hidden_dim
         embedding_size = args.embedding_dim
         loss_function = nn.NLLLoss()
-        classifier = LSTMClassifier(input_size, hidden_size, embedding_size, device)
+        classifier = GraphClassifier(args.core, input_size, hidden_size, embedding_size, device)
         classifier = classifier.to(device)
         optimizer = optim.Adam(classifier.parameters(), lr=args.learning_rate)
         train_idxes = list(range(len(train_graphs)))

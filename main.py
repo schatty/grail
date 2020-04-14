@@ -52,7 +52,7 @@ class Graph(object):
         self.edge_pairs[:, 1] = y
         self.edge_pairs = self.edge_pairs.flatten()
 
-        ## Add neighbor info
+        # Add neighbor info
         self.neighbor1 = []
         self.neighbor1_tag = []
         self.neighbor2 = []
@@ -138,8 +138,8 @@ class GraphClassifier(nn.Module):
         elif core == "transformer":
             self.model = BasicTransformer(emb=embedding_size*2,
                                           heads=4,
-                                          depth=6,
-                                          seq_length=50,
+                                          depth=1,
+                                          seq_length=40,
                                           num_classes=2)
         else:
             raise ValueError("Unknown graph calssfifier core.")
@@ -156,13 +156,16 @@ class GraphClassifier(nn.Module):
         self.mlp_4 = MLPClassifier(input_size=hidden, hidden_size=args.hidden, num_class=args.num_class)
 
         self.device = device
+        self._update_step = -1
 
     def forward(self, batch_graph):
+        self._update_step += 1
+
         node_tags = batch_graph[0].node_tags
         node_tags = torch.LongTensor(node_tags).view(-1, 1)
         node_tags = node_tags.to(self.device)
         label = [batch_graph[0].label]
-        label =  torch.LongTensor(label)
+        label = torch.LongTensor(label)
         label = label.to(self.device)
         num_nodes = batch_graph[0].num_nodes
         node_feat = torch.zeros(num_nodes, args.feat_dim)
@@ -203,7 +206,7 @@ class GraphClassifier(nn.Module):
         else:
             # Transfomer has dimensitons [batch_size, input_seq, embed]
             batch = batch.permute(1, 0, 2)
-            out = self.model(batch)
+            out = self.model(batch, self._update_step)
             embed = torch.mean(out, dim=1)
 
         return self._ensemble(embed, label)
@@ -224,6 +227,7 @@ class GraphClassifier(nn.Module):
         loss_ = loss_1 + loss_2 + loss_3 + loss_4
 
         acc = ((y_ >= 0.5).int() == label.item()).float()
+        acc = acc.cpu().numpy().item()
 
         return loss_, acc
 

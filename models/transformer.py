@@ -1,3 +1,4 @@
+import numpy as np
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
@@ -50,7 +51,7 @@ class SelfAttentionWide(nn.Module):
 
         self.unifyheads = nn.Linear(heads * emb, emb)
 
-    def forward(self, x):
+    def forward(self, x, step=None):
 
         b, t, e = x.size()
         h = self.heads
@@ -89,6 +90,13 @@ class SelfAttentionWide(nn.Module):
         # swap h, t back, unify heads
         out = out.transpose(1, 2).contiguous().view(b, t, h * e)
 
+        if step % 1000 == 0:
+            # Saving only first element from the batch
+            out_np = dot[0, :, :].squeeze().detach().cpu().numpy()
+            # TODO: Save to the config-specified directory
+            with open(f"./attentions/attention_step_{step}.npy", "wb") as f:
+                np.save(f, out_np)
+
         return self.unifyheads(out)
 
 
@@ -111,9 +119,9 @@ class TransformerBlock(nn.Module):
 
         self.do = nn.Dropout(dropout)
 
-    def forward(self, x):
+    def forward(self, x, step):
 
-        attended = self.attention(x)
+        attended = self.attention(x, step)
 
         x = self.norm1(attended + x)
 
@@ -150,23 +158,23 @@ class BasicTransformer(nn.Module):
         self.max_pool = max_pool
 
         tblocks = []
-        for i in range(depth):
-            tblocks.append(
-                TransformerBlock(emb=emb, heads=heads, seq_length=seq_length, mask=False, dropout=dropout))
+        #for i in range(depth):
+        #    tblocks.append(
+        self.tblocks = TransformerBlock(emb=emb, heads=heads, seq_length=seq_length, mask=False, dropout=dropout)
 
-        self.tblocks = nn.Sequential(*tblocks)
+        #self.tblocks = nn.Sequential(*tblocks)
 
         self.toprobs = nn.Linear(emb, num_classes)
 
         self.do = nn.Dropout(dropout)
 
-    def forward(self, x):
+    def forward(self, x, step):
         """
         :param x: A batch by sequence length integer tensor of token indices.
         :return: predicted log-probability vectors for each token based on the preceding tokens.
         """
         # x = self.do(x)
 
-        x = self.tblocks(x)
+        x = self.tblocks(x, step)
 
         return x
